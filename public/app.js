@@ -105,7 +105,7 @@ async function loadStagnantProspects() {
         const diffTime = Math.abs(now - lastActionDate);
         const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
 
-        if (diffDays > 14) {
+        if (diffDays > 5) {
             stagnantList.push({
                 ...prospect,
                 daysStagnant: diffDays
@@ -128,13 +128,18 @@ function renderStagnantTable(list) {
     }
 
     list.forEach(item => {
+        // Dynamic heatmapping for management visibility
+        let severityColor = '#ff991f'; // Warning Orange for > 5 days
+        if (item.daysStagnant > 10) severityColor = '#de350b'; // Critical Red for > 30 days
+        if (item.daysStagnant > 15) severityColor = '#bf2600'; // Dark Red for > 60 days
+
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td><strong><a href="https://nbt-marketing.atlassian.net/browse/${item.issue_key}" target="_blank" style="color: #0052CC; text-decoration: none;">${item.issue_key}</a></strong></td>
             <td>${item.summary}</td>
             <td>${item.assignee}</td>
             <td><span class="status-badge">${item.current_status}</span></td>
-            <td class="warning-text">${item.daysStagnant} Days</td>
+            <td style="color: ${severityColor}; font-weight: bold;">${item.daysStagnant} Days</td>
         `;
         tbody.appendChild(tr);
     });
