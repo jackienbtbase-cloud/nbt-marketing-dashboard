@@ -162,10 +162,12 @@ async function loadInteractivePipeline() {
     const workflowStages = [
         "INITIATING", 
         "APPROACH", 
-        "BRIEFING SESSIONS/ DEMO", 
+        "BRIEFING SESSION/ DEMO", 
         "SITE VISITS", 
         "BQ/ PROPOSAL PREPARATION", 
-        "NEGOTIATION/ FOLLOW-UP"
+        "NEGOTIATION/ FOLLOW-UP",
+        "CLOSED WON",             // NEW
+        "CLOSED LOST"             // NEW
     ];
 
     // Group active tickets by their current status
@@ -192,6 +194,11 @@ function renderPipelineBlocks(groupedTickets) {
         // Create the clickable block
         const block = document.createElement('div');
         block.className = 'status-block';
+		
+		// Add specific colors for Won/Lost
+        if (status === 'CLOSED WON') block.style.background = '#00875A'; // Jira Green
+        if (status === 'CLOSED LOST') block.style.background = '#DE350B'; // Jira Red
+		
         block.innerHTML = `
             <span class="status-name">${status}</span>
             <span class="count">${ticketsInStage.length}</span>

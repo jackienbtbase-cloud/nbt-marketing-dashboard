@@ -88,7 +88,25 @@ def fetch_and_sync():
                         ignore_duplicates=True,
                         on_conflict="issue_key,to_status,transitioned_at"
                     ).execute()
-                    
+    
+    # 1. Create a list of all active issue keys we just pulled from Jira
+    active_jira_keys = [issue["key"] for issue in issues]
+    
+    # 2. Fetch all existing issue keys currently stored in Supabase
+    db_response = supabase.table("nmmsb_prospects").select("issue_key").execute()
+    db_keys = [row["issue_key"] for row in db_response.data]
+    
+    # 3. Identify and delete any keys in Supabase that are no longer in Jira
+    for db_key in db_keys:
+        if db_key not in active_jira_keys:
+            # Delete from transitions table first to wipe the history
+            supabase.table("nmmsb_transitions").delete().eq("issue_key", db_key).execute()
+            
+            # Then delete the main prospect record
+            supabase.table("nmmsb_prospects").delete().eq("issue_key", db_key).execute()
+            
+            print(f"Removed deleted Jira ticket and its history from database: {db_key}")
+    
     print("Database sync complete.")
 
 if __name__ == "__main__":

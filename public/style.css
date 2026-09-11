@@ -114,18 +114,18 @@ td {
 
 .pipeline-blocks {
     display: flex;
-    gap: 16px;
+    gap: 8px; /* Reduced from 16px */
     overflow-x: auto;
     padding-bottom: 8px;
 }
 
 .status-block {
     flex: 1;
-    min-width: 160px;
+    min-width: 100px; /* Reduced from 160px */
     background: #0052CC;
     color: white;
-    padding: 16px;
-    border-radius: 8px;
+    padding: 10px 8px; /* Reduced padding */
+    border-radius: 6px; /* Slightly smaller radius */
     cursor: pointer;
     text-align: center;
     transition: all 0.2s ease;
@@ -139,14 +139,17 @@ td {
 }
 
 .status-block .status-name {
-    font-size: 12px;
+    font-size: 10px; /* Reduced from 12px for longer text */
     text-transform: uppercase;
     font-weight: 600;
     opacity: 0.9;
+    display: block;
+    white-space: normal; /* Allows long names to wrap to a second line */
+    line-height: 1.2;
 }
 
 .status-block .count {
-    font-size: 28px;
+    font-size: 22px;
     font-weight: bold;
     display: block;
     margin-top: 4px;
