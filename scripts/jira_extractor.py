@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-JIRA_DOMAIN = os.getenv("JIRA_DOMAIN")  # e.g. "yourdomain.atlassian.net"
+JIRA_DOMAIN = os.getenv("JIRA_DOMAIN")  
 JIRA_EMAIL = os.getenv("JIRA_EMAIL")
 JIRA_API_TOKEN = os.getenv("JIRA_API_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -22,7 +22,6 @@ def fetch_and_sync():
         "Content-Type": "application/json"
     }
     
-    # Using POST requires sending the parameters as a JSON payload
     payload = {
         "jql": 'project = KAN ORDER BY created DESC',
         "expand": "changelog",
@@ -32,7 +31,7 @@ def fetch_and_sync():
 
     print(f"Connecting to Jira via POST: {url}")
     response = requests.post(url, headers=headers, json=payload, auth=auth)
-    # Replace response.raise_for_status() with this error catcher
+    
     if not response.ok:
         print(f"Jira API Error {response.status_code}: {response.text}")
         return
@@ -48,30 +47,35 @@ def fetch_and_sync():
     for issue in issues:
         key = issue["key"]
         fields = issue.get("fields", {})
+        current_status = fields.get("status", {}).get("name", "") if fields.get("status") else ""
         
-        # 2. Extract directly from the standard fields array (API v2)
+        # 1. Extract comments and format the latest comment for the UI
         comment_obj = fields.get("comment")
         comments_array = comment_obj.get("comments", []) if comment_obj else []
         
         latest_comment = "<i>No comments yet.</i>"
         if comments_array:
-            # Grab the last item and convert line breaks to HTML
-            raw_comment = comments_array[-1].get("body", "<i>No comments yet.</i>")
-            latest_comment = raw_comment.replace("\n", "<br>")
+            latest_comment_data = comments_array[-1]
+            raw_comment = latest_comment_data.get("body", "<i>No comments yet.</i>")
+            author_name = latest_comment_data.get("author", {}).get("displayName", "Unknown")
+            
+            # Append author name directly to the comment body
+            formatted_comment = f"{author_name}: {raw_comment}"
+            latest_comment = formatted_comment.replace("\n", "<br>")
         
-        # 3. Add latest_comment to your Supabase upsert payload
         prospect_payload = {
             "issue_key": key,
             "summary": fields.get("summary", ""),
             "assignee": fields.get("assignee", {}).get("displayName", "Unassigned") if fields.get("assignee") else "Unassigned",
-            "current_status": fields.get("status", {}).get("name", "") if fields.get("status") else "",
+            "current_status": current_status,
             "created_at": fields.get("created"),
-            "latest_comment": latest_comment # NEW FIELD
+            "latest_comment": latest_comment
         }
         
         supabase.table("nmmsb_prospects").upsert(prospect_payload).execute()
         print(f"Synced Prospect: {key}")
 
+        # 2. Extract standard status changes from Jira changelog
         histories = issue.get("changelog", {}).get("histories", [])
         for history in histories:
             created_date = history["created"]
@@ -88,23 +92,36 @@ def fetch_and_sync():
                         ignore_duplicates=True,
                         on_conflict="issue_key,to_status,transitioned_at"
                     ).execute()
+                    
+        # 3. Extract comments and create a pseudo-transition IF author is Dihyauddin
+        for comment in comments_array:
+            c_author = comment.get("author", {}).get("displayName", "")
+            # Verify if the commenter is Dihyauddin (case-insensitive)
+            if "dihyauddin" in c_author.lower():
+                c_date = comment.get("created")
+                if c_date:
+                    transition_payload = {
+                        "issue_key": key,
+                        "from_status": "Comment Update",
+                        "to_status": current_status,
+                        "transitioned_at": c_date
+                    }
+                    # Upserting this will force the frontend timer to reset based on this date
+                    supabase.table("nmmsb_transitions").upsert(
+                        transition_payload, 
+                        ignore_duplicates=True,
+                        on_conflict="issue_key,to_status,transitioned_at"
+                    ).execute()
     
-    # 1. Create a list of all active issue keys we just pulled from Jira
+    # 4. Cleanup deleted tickets
     active_jira_keys = [issue["key"] for issue in issues]
-    
-    # 2. Fetch all existing issue keys currently stored in Supabase
     db_response = supabase.table("nmmsb_prospects").select("issue_key").execute()
     db_keys = [row["issue_key"] for row in db_response.data]
     
-    # 3. Identify and delete any keys in Supabase that are no longer in Jira
     for db_key in db_keys:
         if db_key not in active_jira_keys:
-            # Delete from transitions table first to wipe the history
             supabase.table("nmmsb_transitions").delete().eq("issue_key", db_key).execute()
-            
-            # Then delete the main prospect record
             supabase.table("nmmsb_prospects").delete().eq("issue_key", db_key).execute()
-            
             print(f"Removed deleted Jira ticket and its history from database: {db_key}")
     
     print("Database sync complete.")
