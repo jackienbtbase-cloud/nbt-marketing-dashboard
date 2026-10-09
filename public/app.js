@@ -123,7 +123,7 @@ function renderStagnantTable(list) {
     tbody.innerHTML = '';
 
     if (list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding: 24px; color: #5e6c84;">No stagnant prospects! Your pipeline is moving well. 🎉</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding: 24px; color: #5e6c84;">No stagnant prospects! Your pipeline is moving well. 🎉</td></tr>';
         return;
     }
 
@@ -140,16 +140,79 @@ function renderStagnantTable(list) {
             <td>${item.assignee}</td>
             <td><span class="status-badge">${item.current_status}</span></td>
             <td style="color: ${severityColor}; font-weight: bold;">${item.daysStagnant} Days</td>
+            <td>
+                <div style="display:flex; flex-direction:column; gap:6px;">
+                    <span style="font-size:12px; color:#172b4d;">${item.latest_comment || '<i style="color:#5e6c84;">No comments yet</i>'}</span>
+                    <div style="display:flex; gap:4px;">
+                        <input type="text" id="comment-${item.issue_key}" placeholder="Write comment..." style="width: 140px; font-size: 12px; padding: 4px; border: 1px solid #dfe1e6; border-radius: 3px;">
+                        <button onclick="submitComment('${item.issue_key}', '${item.assignee}', '${item.current_status}')" style="padding: 4px 8px; cursor: pointer; font-size: 12px; background: #0052CC; color: white; border: none; border-radius: 3px;">Save</button>
+                    </div>
+                </div>
+            </td>
         `;
         tbody.appendChild(tr);
     });
 }
 
-// Add this to your existing app.js
+// --- 新增的提交评论功能 ---
+window.submitComment = async function(issueKey, assignee, currentStatus) {
+    const commentInput = document.getElementById(`comment-${issueKey}`).value;
+    if (!commentInput) {
+        alert("Please enter a comment before saving.");
+        return;
+    }
+
+    // 弹窗询问更新者的名字
+    const userName = prompt("Please enter your name (To verify if you are the assignee):");
+    if (!userName) return;
+
+    // TODO: 您可以在这里把 "boss_name" 换成老板的实际名字，"your_name" 换成您的名字，全小写即可
+    const bossName = "Jason for NBT-M"; 
+    const myName = "jackie.nbtbase";
+
+    const inputNameStr = userName.trim().toLowerCase();
+    
+    // 判断逻辑：名字必须是系统里写着的 Assignee，并且坚决不能是您或老板
+    const isAssignee = inputNameStr === assignee.trim().toLowerCase();
+    const isNotBossOrMe = inputNameStr !== bossName && inputNameStr !== myName;
+    const canResetTime = isAssignee && isNotBossOrMe;
+
+    try {
+        // 1. 任何人写评论，都会更新到 latest_comment 里
+        const { error: commentError } = await supabaseClient
+            .from('nmmsb_prospects')
+            .update({ latest_comment: commentInput })
+            .eq('issue_key', issueKey);
+
+        if (commentError) throw commentError;
+
+        // 2. 如果是负责的员工（排除老板和您），则插入一条相同的状态记录，这会让 Days Stagnant 归零
+        if (canResetTime) {
+            const { error: transitionError } = await supabaseClient
+                .from('nmmsb_transitions')
+                .insert([{
+                    issue_key: issueKey,
+                    to_status: currentStatus,
+                    transitioned_at: new Date().toISOString()
+                }]);
+            
+            if (transitionError) throw transitionError;
+            alert(`✅ Comment saved! "Days Stagnant" timer has been RESET because the assignee (${userName}) updated it.`);
+        } else {
+            alert(`✅ Comment saved! \n\n(Note: "Days Stagnant" is NOT reset because you are either the Admin/Boss, or not the assignee)`);
+        }
+
+        // 重新读取并刷新表格
+        loadStagnantProspects();
+        
+    } catch (error) {
+        console.error("Error updating comment:", error);
+        alert("Error saving comment. Please try again.");
+    }
+};
 
 const JIRA_BASE_URL = "https://nbt-marketing.atlassian.net/browse/";
 
-// Create the interactive pipeline overview
 async function loadInteractivePipeline() {
     const { data: prospects, error } = await supabaseClient.from('nmmsb_prospects').select('*');
     
@@ -158,7 +221,6 @@ async function loadInteractivePipeline() {
         return;
     }
 
-    // Define the specific pipeline order based on your workflow
     const workflowStages = [
         "INITIATING", 
         "APPROACH", 
@@ -166,11 +228,10 @@ async function loadInteractivePipeline() {
         "SITE VISITS", 
         "BQ/ PROPOSAL PREPARATION", 
         "NEGOTIATION/ FOLLOW-UP",
-        "CLOSED WON",             // NEW
-        "CLOSED LOST"             // NEW
+        "CLOSED WON",
+        "CLOSED LOST"
     ];
 
-    // Group active tickets by their current status
     const groupedTickets = {};
     workflowStages.forEach(stage => groupedTickets[stage] = []);
 
@@ -191,20 +252,17 @@ function renderPipelineBlocks(groupedTickets) {
     Object.keys(groupedTickets).forEach(status => {
         const ticketsInStage = groupedTickets[status];
         
-        // Create the clickable block
         const block = document.createElement('div');
         block.className = 'status-block';
 		
-		// Add specific colors for Won/Lost
-        if (status === 'CLOSED WON') block.style.background = '#00875A'; // Jira Green
-        if (status === 'CLOSED LOST') block.style.background = '#DE350B'; // Jira Red
+        if (status === 'CLOSED WON') block.style.background = '#00875A';
+        if (status === 'CLOSED LOST') block.style.background = '#DE350B';
 		
         block.innerHTML = `
             <span class="status-name">${status}</span>
             <span class="count">${ticketsInStage.length}</span>
         `;
         
-        // Attach click event to show details
         block.addEventListener('click', () => showTicketDetails(status, ticketsInStage));
         
         blocksContainer.appendChild(block);
@@ -226,7 +284,6 @@ function showTicketDetails(status, tickets) {
             const card = document.createElement('div');
             card.className = 'ticket-card';
             
-            // Build the card with a hidden comment section
             card.innerHTML = `
                 <div class="ticket-header" style="cursor: pointer;">
                     <div class="ticket-key">${ticket.issue_key}</div>
@@ -242,7 +299,6 @@ function showTicketDetails(status, tickets) {
                 </div>
             `;
             
-            // Add the click listener to toggle the comment visibility
             const header = card.querySelector('.ticket-header');
             const commentSection = card.querySelector('.ticket-comment');
             
@@ -257,16 +313,10 @@ function showTicketDetails(status, tickets) {
     container.style.display = 'block';
 }
 
-// Close button logic for the details container
 document.getElementById('closeDetailsBtn').addEventListener('click', () => {
     document.getElementById('ticketDetailsContainer').style.display = 'none';
 });
 
-// Trigger this function when the page loads
-
-
-// --- Modify your initial load call at the bottom of the file to include this ---
-// Delete the old loadDashboardMetrics(30); and replace it with:
 loadInteractivePipeline();
 loadDashboardMetrics(30);
 loadStagnantProspects();
