@@ -145,7 +145,7 @@ function renderStagnantTable(list) {
                     <span style="font-size:12px; color:#172b4d;">${item.latest_comment || '<i style="color:#5e6c84;">No comments yet</i>'}</span>
                     <div style="display:flex; gap:4px;">
                         <input type="text" id="comment-${item.issue_key}" placeholder="Write comment..." style="width: 140px; font-size: 12px; padding: 4px; border: 1px solid #dfe1e6; border-radius: 3px;">
-                        <button onclick="submitComment('${item.issue_key}', '${item.assignee}', '${item.current_status}')" style="padding: 4px 8px; cursor: pointer; font-size: 12px; background: #0052CC; color: white; border: none; border-radius: 3px;">Save</button>
+                        <button onclick="submitComment('${item.issue_key}', '${item.current_status}')" style="padding: 4px 8px; cursor: pointer; font-size: 12px; background: #0052CC; color: white; border: none; border-radius: 3px;">Save</button>
                     </div>
                 </div>
             </td>
@@ -154,8 +154,8 @@ function renderStagnantTable(list) {
     });
 }
 
-// --- 新增的提交评论功能 ---
-window.submitComment = async function(issueKey, assignee, currentStatus) {
+// --- 修改后的提交评论功能（只认 Dihyauddin） ---
+window.submitComment = async function(issueKey, currentStatus) {
     const commentInput = document.getElementById(`comment-${issueKey}`).value;
     if (!commentInput) {
         alert("Please enter a comment before saving.");
@@ -163,30 +163,25 @@ window.submitComment = async function(issueKey, assignee, currentStatus) {
     }
 
     // 弹窗询问更新者的名字
-    const userName = prompt("Please enter your name (To verify if you are the assignee):");
+    const userName = prompt("Please enter your name to verify identity (e.g. Dihyauddin):");
     if (!userName) return;
-
-    // TODO: 您可以在这里把 "boss_name" 换成老板的实际名字，"your_name" 换成您的名字，全小写即可
-    const bossName = "Jason for NBT-M"; 
-    const myName = "jackie.nbtbase";
 
     const inputNameStr = userName.trim().toLowerCase();
     
-    // 判断逻辑：名字必须是系统里写着的 Assignee，并且坚决不能是您或老板
-    const isAssignee = inputNameStr === assignee.trim().toLowerCase();
-    const isNotBossOrMe = inputNameStr !== bossName && inputNameStr !== myName;
-    const canResetTime = isAssignee && isNotBossOrMe;
+    // 逻辑：唯一能重置时间的人是 Dihyauddin
+    const canResetTime = inputNameStr === "dihyauddin";
 
     try {
-        // 1. 任何人写评论，都会更新到 latest_comment 里
+        // 1. 任何人写评论，都会更新到 latest_comment 里，并且我们在评论前面加上写评论人的名字
+        const formattedComment = `${userName}: ${commentInput}`;
         const { error: commentError } = await supabaseClient
             .from('nmmsb_prospects')
-            .update({ latest_comment: commentInput })
+            .update({ latest_comment: formattedComment })
             .eq('issue_key', issueKey);
 
         if (commentError) throw commentError;
 
-        // 2. 如果是负责的员工（排除老板和您），则插入一条相同的状态记录，这会让 Days Stagnant 归零
+        // 2. 如果是 Dihyauddin，插入新记录重置天数
         if (canResetTime) {
             const { error: transitionError } = await supabaseClient
                 .from('nmmsb_transitions')
@@ -197,9 +192,9 @@ window.submitComment = async function(issueKey, assignee, currentStatus) {
                 }]);
             
             if (transitionError) throw transitionError;
-            alert(`✅ Comment saved! "Days Stagnant" timer has been RESET because the assignee (${userName}) updated it.`);
+            alert(`✅ Comment saved! "Days Stagnant" timer has been RESET because Dihyauddin updated it.`);
         } else {
-            alert(`✅ Comment saved! \n\n(Note: "Days Stagnant" is NOT reset because you are either the Admin/Boss, or not the assignee)`);
+            alert(`✅ Comment saved!\n\n(Note: "Days Stagnant" is NOT reset because you are not Dihyauddin.)`);
         }
 
         // 重新读取并刷新表格
