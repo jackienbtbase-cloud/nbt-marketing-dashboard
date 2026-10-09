@@ -133,6 +133,9 @@ function renderStagnantTable(list) {
         if (item.daysStagnant > 10) severityColor = '#de350b'; // Critical Red for > 30 days
         if (item.daysStagnant > 15) severityColor = '#bf2600'; // Dark Red for > 60 days
 
+        // Handle comment text for tooltip
+        const safeComment = item.latest_comment ? item.latest_comment.replace(/"/g, '&quot;') : 'No comments yet';
+
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td><strong><a href="https://nbt-marketing.atlassian.net/browse/${item.issue_key}" target="_blank" style="color: #0052CC; text-decoration: none;">${item.issue_key}</a></strong></td>
@@ -140,71 +143,15 @@ function renderStagnantTable(list) {
             <td>${item.assignee}</td>
             <td><span class="status-badge">${item.current_status}</span></td>
             <td style="color: ${severityColor}; font-weight: bold;">${item.daysStagnant} Days</td>
-            <td>
-                <div style="display:flex; flex-direction:column; gap:6px;">
-                    <span style="font-size:12px; color:#172b4d;">${item.latest_comment || '<i style="color:#5e6c84;">No comments yet</i>'}</span>
-                    <div style="display:flex; gap:4px;">
-                        <input type="text" id="comment-${item.issue_key}" placeholder="Write comment..." style="width: 140px; font-size: 12px; padding: 4px; border: 1px solid #dfe1e6; border-radius: 3px;">
-                        <button onclick="submitComment('${item.issue_key}', '${item.current_status}')" style="padding: 4px 8px; cursor: pointer; font-size: 12px; background: #0052CC; color: white; border: none; border-radius: 3px;">Save</button>
-                    </div>
+            <td style="max-width: 250px;">
+                <div style="font-size:12px; color:#172b4d; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: default;" title="${safeComment}">
+                    ${item.latest_comment || '<i style="color:#5e6c84;">No comments yet</i>'}
                 </div>
             </td>
         `;
         tbody.appendChild(tr);
     });
 }
-
-// --- Updated comment submission feature (Only Dihyauddin can reset) ---
-window.submitComment = async function(issueKey, currentStatus) {
-    const commentInput = document.getElementById(`comment-${issueKey}`).value;
-    if (!commentInput) {
-        alert("Please enter a comment before saving.");
-        return;
-    }
-
-    // Prompt for user name to verify identity
-    const userName = prompt("Please enter your name to verify identity (e.g. Dihyauddin):");
-    if (!userName) return;
-
-    const inputNameStr = userName.trim().toLowerCase();
-    
-    // Logic: Only Dihyauddin can reset the timer
-    const canResetTime = inputNameStr === "dihyauddin";
-
-    try {
-        // 1. Anyone can comment, format it with their name
-        const formattedComment = `${userName}: ${commentInput}`;
-        const { error: commentError } = await supabaseClient
-            .from('nmmsb_prospects')
-            .update({ latest_comment: formattedComment })
-            .eq('issue_key', issueKey);
-
-        if (commentError) throw commentError;
-
-        // 2. If Dihyauddin, insert transition record to reset the days
-        if (canResetTime) {
-            const { error: transitionError } = await supabaseClient
-                .from('nmmsb_transitions')
-                .insert([{
-                    issue_key: issueKey,
-                    to_status: currentStatus,
-                    transitioned_at: new Date().toISOString()
-                }]);
-            
-            if (transitionError) throw transitionError;
-            alert(`✅ Comment saved! "Days Stagnant" timer has been RESET because Dihyauddin updated it.`);
-        } else {
-            alert(`✅ Comment saved!\n\n(Note: "Days Stagnant" is NOT reset because you are not Dihyauddin.)`);
-        }
-
-        // Reload and refresh the table
-        loadStagnantProspects();
-        
-    } catch (error) {
-        console.error("Error updating comment:", error);
-        alert("Error saving comment. Please try again.");
-    }
-};
 
 const JIRA_BASE_URL = "https://nbt-marketing.atlassian.net/browse/";
 
@@ -279,6 +226,9 @@ function showTicketDetails(status, tickets) {
             const card = document.createElement('div');
             card.className = 'ticket-card';
             
+            // Format comment for the detailed view
+            const safeComment = ticket.latest_comment || '<i>No comments yet.</i>';
+
             card.innerHTML = `
                 <div class="ticket-header" style="cursor: pointer;">
                     <div class="ticket-key">${ticket.issue_key}</div>
@@ -288,7 +238,7 @@ function showTicketDetails(status, tickets) {
                 <div class="ticket-comment" style="display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid #dfe1e6;">
                     <div style="font-size: 13px; color: #172b4d; margin-bottom: 12px; max-height: 150px; overflow-y: auto;">
                         <strong>Latest Update:</strong><br>
-                        ${ticket.latest_comment || '<i>No comments yet.</i>'}
+                        ${safeComment}
                     </div>
                     <a href="${JIRA_BASE_URL}${ticket.issue_key}" target="_blank" class="view-jira-btn">View more in Jira &rarr;</a>
                 </div>
