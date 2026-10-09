@@ -154,7 +154,7 @@ function renderStagnantTable(list) {
     });
 }
 
-// --- 修改后的提交评论功能（只认 Dihyauddin） ---
+// --- Updated comment submission feature (Only Dihyauddin can reset) ---
 window.submitComment = async function(issueKey, currentStatus) {
     const commentInput = document.getElementById(`comment-${issueKey}`).value;
     if (!commentInput) {
@@ -162,17 +162,17 @@ window.submitComment = async function(issueKey, currentStatus) {
         return;
     }
 
-    // 弹窗询问更新者的名字
+    // Prompt for user name to verify identity
     const userName = prompt("Please enter your name to verify identity (e.g. Dihyauddin):");
     if (!userName) return;
 
     const inputNameStr = userName.trim().toLowerCase();
     
-    // 逻辑：唯一能重置时间的人是 Dihyauddin
+    // Logic: Only Dihyauddin can reset the timer
     const canResetTime = inputNameStr === "dihyauddin";
 
     try {
-        // 1. 任何人写评论，都会更新到 latest_comment 里，并且我们在评论前面加上写评论人的名字
+        // 1. Anyone can comment, format it with their name
         const formattedComment = `${userName}: ${commentInput}`;
         const { error: commentError } = await supabaseClient
             .from('nmmsb_prospects')
@@ -181,7 +181,7 @@ window.submitComment = async function(issueKey, currentStatus) {
 
         if (commentError) throw commentError;
 
-        // 2. 如果是 Dihyauddin，插入新记录重置天数
+        // 2. If Dihyauddin, insert transition record to reset the days
         if (canResetTime) {
             const { error: transitionError } = await supabaseClient
                 .from('nmmsb_transitions')
@@ -197,7 +197,7 @@ window.submitComment = async function(issueKey, currentStatus) {
             alert(`✅ Comment saved!\n\n(Note: "Days Stagnant" is NOT reset because you are not Dihyauddin.)`);
         }
 
-        // 重新读取并刷新表格
+        // Reload and refresh the table
         loadStagnantProspects();
         
     } catch (error) {
